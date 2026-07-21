@@ -52,9 +52,15 @@ func FetchFlights(tm *TokenManager) ([]Flight, error) {
 	if tm != nil && tm.Enabled() {
 		token, err := tm.Token()
 		if err != nil {
-			return nil, fmt.Errorf("failed to get auth token: %w", err)
+			// Don't abort the whole fetch just because the auth server is
+			// unreachable — auth.opensky-network.org and
+			// opensky-network.org are different hosts, so one being down
+			// (or blocked) doesn't necessarily mean the other is. Fall
+			// back to an anonymous request rather than returning nothing.
+			log.Printf("auth token fetch failed, falling back to anonymous request: %v\n", err)
+		} else {
+			req.Header.Set("Authorization", "Bearer "+token)
 		}
-		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
 	resp, err := client.Do(req)
