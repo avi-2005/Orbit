@@ -24,15 +24,14 @@ func main() {
 	// as actual environment variables instead, so we ignore a missing file.
 	_ = godotenv.Load()
 
-	tm := NewTokenManager(os.Getenv("OPENSKY_CLIENT_ID"), os.Getenv("OPENSKY_CLIENT_SECRET"))
-	if tm.Enabled() {
-		log.Println("using authenticated OpenSky access")
-	} else {
-		log.Println("WARNING: no OPENSKY_CLIENT_ID/SECRET set — using anonymous access, which is heavily rate-limited and will likely 429")
-	}
 	if os.Getenv("GEMINI_API_KEY") == "" {
 		log.Println("WARNING: no GEMINI_API_KEY set — /api/ask (Orbit Copilot) will return errors until you set one")
 	}
+
+	// Flights via airplanes.live — a community ADS-B feed that, unlike
+	// OpenSky, doesn't block cloud/datacenter IPs. No API key needed.
+	flightTracker := NewFlightTracker()
+	go RunFlightTracking(flightTracker)
 
 	shipTracker := NewShipTracker()
 	go RunAISStream(os.Getenv("AISSTREAM_API_KEY"), shipTracker)
@@ -59,19 +58,27 @@ func main() {
 
 	// Satellites are decoupled entirely from the flight data pipeline —
 	// TLE data is fetched rarely (positions are pure local computation
-	// after that), so satellite tracking keeps working smoothly even
-	// during an OpenSky outage/throttle.
+	// after that). If a refresh fails, retry with backoff instead of
+	// silently waiting for the next scheduled 6h tick — that's what was
+	// causing satellites to sometimes just not show up for hours.
 	satManager := NewSatelliteManager()
-	if err := satManager.RefreshTLEs(); err != nil {
-		log.Println("initial satellite TLE fetch failed (will retry):", err)
-	}
 	go func() {
-		ticker := time.NewTicker(6 * time.Hour)
-		defer ticker.Stop()
-		for range ticker.C {
+		retryDelay := 5 * time.Minute
+		const steadyInterval = 6 * time.Hour
+		const maxRetryDelay = 30 * time.Minute
+
+		for {
 			if err := satManager.RefreshTLEs(); err != nil {
-				log.Println("satellite TLE refresh failed:", err)
+				log.Printf("satellite TLE refresh failed, retrying in %s: %v\n", retryDelay, err)
+				time.Sleep(retryDelay)
+				retryDelay *= 2
+				if retryDelay > maxRetryDelay {
+					retryDelay = maxRetryDelay
+				}
+				continue
 			}
+			retryDelay = 5 * time.Minute
+			time.Sleep(steadyInterval)
 		}
 	}()
 	go func() {
@@ -85,11 +92,15 @@ func main() {
 		}
 	}()
 
+	if os.Getenv("OPENWEATHER_API_KEY") == "" {
+		log.Println("WARNING: no OPENWEATHER_API_KEY set — weather layer will stay empty until you set one")
+	}
+
 	// Weather changes slowly relative to flights/satellites, so this
-	// refreshes far less often — free, keyless Open-Meteo grid data.
+	// refreshes far less often.
 	go func() {
 		fetchAndBroadcastWeather := func() {
-			points, err := FetchWeatherGrid()
+			points, err := FetchWeatherGrid(os.Getenv("OPENWEATHER_API_KEY"))
 			if err != nil {
 				log.Println("weather fetch error:", err)
 			}
@@ -127,41 +138,48 @@ func main() {
 		}
 	}()
 
-	// Poll OpenSky every 12s, run the anomaly/zone analyzer over the fresh
-	// snapshot, update shared state (used by the copilot), persist any new
-	// insights to the history log, and broadcast to every connected client.
-	go StartPolling(12*time.Second, tm, func(flights []Flight) {
-		newInsights := analyzer.Process(flights)
-
-		// Correlate zone presence + nearby weather + recent anomaly history
-		// into one risk score per flight — this is the actual "fusion" step
-		// that ties the separate live layers together into something worth
-		// acting on, rather than four viewers you have to cross-reference
-		// by eye.
-		for i := range flights {
-			f := &flights[i]
-			insideZone := ""
-			for _, z := range WatchZones {
-				if z.Contains(f.Latitude, f.Longitude) {
-					insideZone = z.Name
-					break
-				}
+	// Every 15s, take a snapshot of whatever the flight tracker currently
+	// knows (it's being updated continuously and independently by
+	// RunFlightTracking above), run the anomaly/zone analyzer and risk
+	// correlation over it, persist new insights, and broadcast.
+	go func() {
+		ticker := time.NewTicker(15 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			flights := flightTracker.Snapshot()
+			if len(flights) == 0 {
+				continue
 			}
-			weatherPoint, hasWeather := state.NearestWeather(f.Latitude, f.Longitude)
-			flagged, reason := analyzer.RecentlyFlagged(f.ICAO24, 10*time.Minute)
-			f.RiskScore, f.RiskFactors = ComputeRisk(insideZone, weatherPoint, hasWeather, flagged, reason)
+
+			newInsights := analyzer.Process(flights)
+
+			// Correlate zone presence + nearby weather + recent anomaly
+			// history into one risk score per flight.
+			for i := range flights {
+				f := &flights[i]
+				insideZone := ""
+				for _, z := range WatchZones {
+					if z.Contains(f.Latitude, f.Longitude) {
+						insideZone = z.Name
+						break
+					}
+				}
+				weatherPoint, hasWeather := state.NearestWeather(f.Latitude, f.Longitude)
+				flagged, reason := analyzer.RecentlyFlagged(f.ICAO24, 10*time.Minute)
+				f.RiskScore, f.RiskFactors = ComputeRisk(insideZone, weatherPoint, hasWeather, flagged, reason)
+			}
+
+			state.Update(flights, newInsights)
+			history.Record(newInsights)
+
+			hub.Broadcast("flights", map[string]interface{}{
+				"type":     "flights",
+				"time":     time.Now().Unix(),
+				"flights":  flights,
+				"insights": newInsights,
+			})
 		}
-
-		state.Update(flights, newInsights)
-		history.Record(newInsights)
-
-		hub.Broadcast("flights", map[string]interface{}{
-			"type":     "flights",
-			"time":     time.Now().Unix(),
-			"flights":  flights,
-			"insights": newInsights,
-		})
-	})
+	}()
 
 	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)

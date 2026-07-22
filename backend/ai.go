@@ -86,20 +86,16 @@ func searchFlightsTool() geminiTool {
 		FunctionDeclarations: []functionDeclaration{
 			{
 				Name: "search_flights",
-				Description: "Search currently tracked live flights by registered country of " +
-					"origin and/or a callsign substring. Note: this searches aircraft REGISTRATION " +
-					"country and callsign, not departure airport/city — OpenSky's live feed doesn't " +
-					"include departure/arrival airport data, only current position.",
+				Description: "Search currently tracked live flights by callsign substring " +
+					"(e.g. an airline code like 'AI' for Air India, or 'UAL' for United). " +
+					"Note: this data source does not provide registration country — only " +
+					"callsign search is meaningful.",
 				Parameters: map[string]interface{}{
 					"type": "OBJECT",
 					"properties": map[string]interface{}{
-						"originCountry": map[string]interface{}{
-							"type":        "STRING",
-							"description": "Country name to filter by (e.g. 'India', 'Germany'). Partial match.",
-						},
 						"callsignContains": map[string]interface{}{
 							"type":        "STRING",
-							"description": "Substring to match against flight callsigns (e.g. an airline code like 'AI' for Air India).",
+							"description": "Substring to match against flight callsigns.",
 						},
 						"limit": map[string]interface{}{
 							"type":        "INTEGER",
@@ -208,7 +204,7 @@ func AskCopilot(question string, state *AppState) (string, error) {
 		result := runTool(call, state)
 		contents = append(contents,
 			geminiContent{Role: "model", Parts: []geminiPart{{FunctionCall: call, ThoughtSignature: signature}}},
-			geminiContent{Role: "function", Parts: []geminiPart{{
+			geminiContent{Role: "user", Parts: []geminiPart{{
 				FunctionResponse: &functionResponsePart{Name: call.Name, Response: result},
 			}}},
 		)

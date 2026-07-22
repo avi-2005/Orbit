@@ -1,13 +1,14 @@
 # Orbit — Live 3D Flight Tracker
 
 A WebGL globe (Three.js/react-three-fiber) showing real-world flights in
-real time. A Go backend polls the OpenSky Network public API and fans
+real time. A Go backend polls airplanes.live's community ADS-B feed and
+fans
 updates out to every connected browser over a single shared WebSocket
 connection, so you get live data without every visitor hammering the
 upstream API individually.
 
 ## Structure
-- `backend/` — Go WebSocket server + OpenSky poller
+- `backend/` — Go WebSocket server + flight/ship/satellite/weather tracking
 - `frontend/` — React + Vite + Three.js globe UI
 
 ## Run locally
