@@ -35,7 +35,7 @@ export default function App() {
   const toggleLayer = (key) => setVisible((v) => ({ ...v, [key]: !v[key] }));
 
   return (
-    <div className="relative w-screen h-screen bg-[#05060a]">
+    <div className="relative w-screen h-[100dvh] bg-[#05060a]">
       <GlobeErrorBoundary>
         <Canvas camera={{ position: [2.245, 1.424, -4.815], fov: 45 }}>
           <ambientLight intensity={0.6} />
@@ -63,7 +63,7 @@ export default function App() {
       <FilterPanel visible={visible} onToggleLayer={toggleLayer} />
 
       {/* Status bar */}
-      <div className="absolute bottom-[4.5rem] sm:bottom-6 left-3 sm:left-6 flex items-center gap-2 sm:gap-3 mono text-[10px] sm:text-xs text-white/50">
+      <div className="absolute bottom-28 sm:bottom-6 left-3 sm:left-6 flex items-center gap-2 sm:gap-3 mono text-[10px] sm:text-xs text-white/50">
         <span
           className={`inline-block w-2 h-2 rounded-full ${
             status === "connected" ? "bg-emerald-400" : "bg-amber-400 animate-pulse"
