@@ -8,31 +8,34 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// Hub keeps track of connected clients and broadcasts messages to all of them.
-// This is the classic "fan-out" pattern: one upstream data source (the OpenSky
-// poller) feeds many downstream WebSocket clients without each client hitting
-// the upstream API directly.
+// Hub keeps track of connected clients and broadcasts messages to all of
+// them. Multiple independent upstream sources (flights, ships, satellites,
+// weather) each broadcast on their own timer.
+//
+// Critical constraint: gorilla/websocket allows at most ONE concurrent
+// writer per connection. With several independent goroutines broadcasting
+// on different schedules, two can call WriteMessage on the same connection
+// at the same instant — gorilla panics instead of queuing it. Every
+// connection gets its own mutex here, and every write goes through it.
 type Hub struct {
 	mu      sync.RWMutex
-	clients map[*websocket.Conn]bool
+	clients map[*websocket.Conn]*sync.Mutex // per-connection write lock
 
-	// latestByType holds the most recent broadcast payload per message
-	// type, so a brand-new client gets caught up on everything (flights
-	// AND satellites) immediately instead of waiting for whichever type
-	// happens to broadcast next.
 	latestByType map[string][]byte
 }
 
 func NewHub() *Hub {
 	return &Hub{
-		clients:      make(map[*websocket.Conn]bool),
+		clients:      make(map[*websocket.Conn]*sync.Mutex),
 		latestByType: make(map[string][]byte),
 	}
 }
 
 func (h *Hub) Register(conn *websocket.Conn) {
+	writeMu := &sync.Mutex{}
+
 	h.mu.Lock()
-	h.clients[conn] = true
+	h.clients[conn] = writeMu
 	cached := make([][]byte, 0, len(h.latestByType))
 	for _, v := range h.latestByType {
 		cached = append(cached, v)
@@ -40,7 +43,7 @@ func (h *Hub) Register(conn *websocket.Conn) {
 	h.mu.Unlock()
 
 	for _, data := range cached {
-		if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
+		if err := writeToClient(conn, writeMu, data); err != nil {
 			log.Println("failed to send initial snapshot:", err)
 		}
 	}
@@ -53,8 +56,15 @@ func (h *Hub) Unregister(conn *websocket.Conn) {
 	conn.Close()
 }
 
-// Broadcast marshals payload once, caches it under msgType for future new
-// clients, and pushes it to every currently connected client.
+// writeToClient serializes every write to a given connection through that
+// connection's own mutex — the actual fix for the panic.
+func writeToClient(conn *websocket.Conn, writeMu *sync.Mutex, data []byte) error {
+	writeMu.Lock()
+	defer writeMu.Unlock()
+	return conn.WriteMessage(websocket.TextMessage, data)
+}
+
+// Broadcast is safe to call concurrently from multiple goroutines.
 func (h *Hub) Broadcast(msgType string, payload interface{}) {
 	data, err := json.Marshal(payload)
 	if err != nil {
@@ -64,16 +74,20 @@ func (h *Hub) Broadcast(msgType string, payload interface{}) {
 
 	h.mu.Lock()
 	h.latestByType[msgType] = data
-	clients := make([]*websocket.Conn, 0, len(h.clients))
-	for c := range h.clients {
-		clients = append(clients, c)
+	type client struct {
+		conn    *websocket.Conn
+		writeMu *sync.Mutex
+	}
+	clients := make([]client, 0, len(h.clients))
+	for c, m := range h.clients {
+		clients = append(clients, client{c, m})
 	}
 	h.mu.Unlock()
 
 	for _, c := range clients {
-		if err := c.WriteMessage(websocket.TextMessage, data); err != nil {
+		if err := writeToClient(c.conn, c.writeMu, data); err != nil {
 			log.Println("write error, dropping client:", err)
-			h.Unregister(c)
+			h.Unregister(c.conn)
 		}
 	}
 }

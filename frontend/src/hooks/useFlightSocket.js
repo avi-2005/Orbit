@@ -13,7 +13,6 @@ export function useFlightSocket() {
   const [insights, setInsights] = useState([]);
   const [satellites, setSatellites] = useState([]);
   const [weather, setWeather] = useState([]);
-  const [ships, setShips] = useState([]);
   const [status, setStatus] = useState("connecting");
   const retryDelay = useRef(1000);
 
@@ -42,8 +41,6 @@ export function useFlightSocket() {
             setSatellites(msg.satellites || []);
           } else if (msg.type === "weather") {
             setWeather(msg.weather || []);
-          } else if (msg.type === "ships") {
-            setShips(msg.ships || []);
           }
         } catch (err) {
           console.error("failed to parse ws message", err);
@@ -69,5 +66,5 @@ export function useFlightSocket() {
     };
   }, []);
 
-  return { flights, insights, satellites, weather, ships, status };
+  return { flights, insights, satellites, weather, status };
 }

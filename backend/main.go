@@ -33,28 +33,10 @@ func main() {
 	flightTracker := NewFlightTracker()
 	go RunFlightTracking(flightTracker)
 
-	shipTracker := NewShipTracker()
-	go RunAISStream(os.Getenv("AISSTREAM_API_KEY"), shipTracker)
-
 	hub := NewHub()
 	analyzer := NewAnalyzer()
 	state := NewAppState()
 	history := OpenHistory()
-
-	go func() {
-		ticker := time.NewTicker(8 * time.Second)
-		defer ticker.Stop()
-		for range ticker.C {
-			ships := shipTracker.Snapshot()
-			if len(ships) > 0 {
-				state.SetShips(ships)
-				hub.Broadcast("ships", map[string]interface{}{
-					"type":  "ships",
-					"ships": ships,
-				})
-			}
-		}
-	}()
 
 	// Satellites are decoupled entirely from the flight data pipeline —
 	// TLE data is fetched rarely (positions are pure local computation

@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8080";
 
 const EXAMPLE_QUESTIONS = [
-  "How congested is the Strait of Hormuz?",
+  "Any flights near a watch zone?",
   "Any flights at elevated risk right now?",
   "Any anomalies detected recently?",
 ];
@@ -52,12 +52,12 @@ export default function CopilotPanel() {
   };
 
   return (
-    <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-[420px] bg-black/70 backdrop-blur-md border border-white/10 rounded-xl p-4 text-xs">
+    <div className="text-xs">
       <h3 className="mono text-white/50 tracking-widest mb-2 flex justify-between">
         <span>ORBIT COPILOT</span>
         {lifetimeCount !== null && (
           <span className="text-white/30 normal-case tracking-normal">
-            {lifetimeCount.toLocaleString()} insights logged all-time
+            {lifetimeCount.toLocaleString()} logged
           </span>
         )}
       </h3>
@@ -77,7 +77,7 @@ export default function CopilotPanel() {
       )}
 
       {messages.length > 0 && (
-        <div className="max-h-32 overflow-y-auto space-y-1.5 mb-2">
+        <div className="max-h-[35vh] sm:max-h-32 overflow-y-auto space-y-1.5 mb-2">
           {messages.map((m, i) => (
             <p key={i} className={m.role === "user" ? "text-white/80" : "text-emerald-300"}>
               {m.role === "user" ? "› " : "» "}
@@ -94,12 +94,12 @@ export default function CopilotPanel() {
           onChange={(e) => setQuestion(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && ask()}
           placeholder="Ask about current airspace…"
-          className="flex-1 bg-white/5 border border-white/10 rounded px-2 py-1.5 mono text-white/90 outline-none focus:border-orange-400/50"
+          className="flex-1 min-w-0 bg-white/5 border border-white/10 rounded px-2 py-1.5 mono text-white/90 outline-none focus:border-orange-400/50"
         />
         <button
           onClick={ask}
           disabled={loading}
-          className="px-3 py-1.5 bg-orange-500/80 hover:bg-orange-500 disabled:opacity-50 rounded mono text-white transition-colors"
+          className="px-3 py-1.5 bg-orange-500/80 hover:bg-orange-500 disabled:opacity-50 rounded mono text-white transition-colors shrink-0"
         >
           Ask
         </button>

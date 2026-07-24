@@ -108,21 +108,6 @@ func searchFlightsTool() geminiTool {
 	}
 }
 
-func chokepointCongestionTool() geminiTool {
-	return geminiTool{
-		FunctionDeclarations: []functionDeclaration{
-			{
-				Name: "get_chokepoint_congestion",
-				Description: "Get the current number of ships and flights inside each named " +
-					"trade chokepoint zone (Strait of Hormuz, Suez Canal, Strait of Malacca, " +
-					"Red Sea, Black Sea, North Korea airspace). Use this for any question about " +
-					"maritime traffic, oil chokepoints, trade routes, or shipping congestion.",
-				Parameters: map[string]interface{}{"type": "OBJECT", "properties": map[string]interface{}{}},
-			},
-		},
-	}
-}
-
 func highRiskFlightsTool() geminiTool {
 	return geminiTool{
 		FunctionDeclarations: []functionDeclaration{
@@ -175,7 +160,7 @@ func AskCopilot(question string, state *AppState) (string, error) {
 	contents := []geminiContent{
 		{Role: "user", Parts: []geminiPart{{Text: question}}},
 	}
-	tools := []geminiTool{searchFlightsTool(), highRiskFlightsTool(), chokepointCongestionTool()}
+	tools := []geminiTool{searchFlightsTool(), highRiskFlightsTool()}
 
 	for attempt := 0; attempt < 3; attempt++ {
 		parts, err := callGemini(apiKey, system, contents, tools)
@@ -216,7 +201,6 @@ func AskCopilot(question string, state *AppState) (string, error) {
 func runTool(call *functionCall, state *AppState) map[string]interface{} {
 	switch call.Name {
 	case "search_flights":
-		originCountry, _ := call.Args["originCountry"].(string)
 		callsign, _ := call.Args["callsignContains"].(string)
 		limit := 10
 		if l, ok := call.Args["limit"].(float64); ok && l > 0 {
@@ -225,7 +209,7 @@ func runTool(call *functionCall, state *AppState) map[string]interface{} {
 		if limit > 25 {
 			limit = 25
 		}
-		matches := state.SearchFlights(originCountry, callsign, limit)
+		matches := state.SearchFlights(callsign, limit)
 		return map[string]interface{}{
 			"matchCount": len(matches),
 			"flights":    matches,
@@ -243,10 +227,6 @@ func runTool(call *functionCall, state *AppState) map[string]interface{} {
 		return map[string]interface{}{
 			"matchCount": len(matches),
 			"flights":    matches,
-		}
-	case "get_chokepoint_congestion":
-		return map[string]interface{}{
-			"chokepoints": state.ChokepointCongestion(),
 		}
 	default:
 		return map[string]interface{}{"error": "unknown tool: " + call.Name}

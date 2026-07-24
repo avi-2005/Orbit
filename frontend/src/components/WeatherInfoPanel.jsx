@@ -5,7 +5,7 @@ export default function WeatherInfoPanel({ point, onClose }) {
     point.temperatureC >= 38 ? "Heatwave" : point.precipitationMm > 0.1 || point.windSpeedKmh > 35 ? "Storm activity" : "Calm";
 
   return (
-    <div className="absolute top-6 right-6 w-72 bg-black/70 backdrop-blur-md border border-white/10 rounded-xl p-5 text-sm shadow-2xl">
+    <div className="absolute top-32 left-3 right-3 sm:top-6 sm:left-auto sm:right-6 sm:w-72 bg-black/70 backdrop-blur-md border border-white/10 rounded-xl p-4 sm:p-5 text-sm shadow-2xl z-20">
       <div className="flex items-center justify-between mb-3">
         <h2 className="mono text-sky-300 text-base tracking-wide">{kind}</h2>
         <button onClick={onClose} className="text-white/40 hover:text-white transition-colors">

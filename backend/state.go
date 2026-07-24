@@ -18,7 +18,6 @@ type AppState struct {
 	flights  []Flight
 	insights []Insight // newest first
 	weather  []WeatherPoint
-	ships    []Ship
 }
 
 func NewAppState() *AppState {
@@ -65,22 +64,16 @@ func (s *AppState) Update(flights []Flight, newInsights []Insight) {
 	}
 }
 
-// SearchFlights filters currently tracked flights by registration country
-// and/or callsign substring (case-insensitive). Used by the copilot's
-// search_flights tool so it can answer specific questions instead of only
-// summarizing.
-func (s *AppState) SearchFlights(originCountry, callsignSubstr string, limit int) []Flight {
+// SearchFlights filters currently tracked flights by callsign substring
+// (case-insensitive). Used by the copilot's search_flights tool.
+func (s *AppState) SearchFlights(callsignSubstr string, limit int) []Flight {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	country := strings.ToLower(strings.TrimSpace(originCountry))
 	callsign := strings.ToLower(strings.TrimSpace(callsignSubstr))
 
 	var results []Flight
 	for _, f := range s.flights {
-		if country != "" && !strings.Contains(strings.ToLower(f.Country), country) {
-			continue
-		}
 		if callsign != "" && !strings.Contains(strings.ToLower(f.Callsign), callsign) {
 			continue
 		}
@@ -111,51 +104,6 @@ func (s *AppState) HighRiskFlights(minScore, limit int) []Flight {
 	return results
 }
 
-func (s *AppState) SetShips(ships []Ship) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.ships = ships
-}
-
-// ChokepointCongestion is the actual "trade intelligence" signal this
-// whole project is aimed at: how many ships and flights are currently
-// moving through each named chokepoint zone right now. A real trading
-// desk watching e.g. Hormuz cares about exactly this kind of count.
-type ChokepointCongestion struct {
-	Zone        string `json:"zone"`
-	ShipCount   int    `json:"shipCount"`
-	FlightCount int    `json:"flightCount"`
-}
-
-func (s *AppState) ChokepointCongestion() []ChokepointCongestion {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.chokepointCongestionLocked()
-}
-
-// chokepointCongestionLocked assumes the caller already holds a read (or
-// write) lock — used internally by Snapshot() to avoid re-acquiring
-// RLock, which is unsafe to nest if a writer happens to be waiting.
-func (s *AppState) chokepointCongestionLocked() []ChokepointCongestion {
-	result := make([]ChokepointCongestion, 0, len(WatchZones))
-	for _, z := range WatchZones {
-		var c ChokepointCongestion
-		c.Zone = z.Name
-		for _, sh := range s.ships {
-			if z.Contains(sh.Lat, sh.Lon) {
-				c.ShipCount++
-			}
-		}
-		for _, f := range s.flights {
-			if z.Contains(f.Latitude, f.Longitude) {
-				c.FlightCount++
-			}
-		}
-		result = append(result, c)
-	}
-	return result
-}
-
 func (s *AppState) Snapshot() string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -183,11 +131,6 @@ func (s *AppState) Snapshot() string {
 		}
 	}
 	sb.WriteString(fmt.Sprintf("\nFlights currently at elevated risk (score >= 50, combining zone/weather/anomaly signals): %d\n", highRisk))
-
-	sb.WriteString("\nChokepoint congestion (ships and flights currently in each zone):\n")
-	for _, c := range s.chokepointCongestionLocked() {
-		sb.WriteString(fmt.Sprintf("- %s: %d ships, %d flights\n", c.Zone, c.ShipCount, c.FlightCount))
-	}
 
 	sb.WriteString("\nRecent flagged events (most recent first):\n")
 	limit := len(s.insights)

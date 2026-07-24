@@ -12,12 +12,12 @@ const TYPE_LABEL = {
 
 export default function InsightsFeed({ insights, onSelect }) {
   return (
-    <div className="absolute bottom-6 right-6 w-80 max-h-72 overflow-y-auto bg-black/70 backdrop-blur-md border border-white/10 rounded-xl p-4 text-xs">
+    <div className="text-xs">
       <h3 className="mono text-white/50 tracking-widest mb-2">LIVE INSIGHTS</h3>
       {insights.length === 0 && (
         <p className="text-white/30">Watching for anomalies…</p>
       )}
-      <div className="space-y-2">
+      <div className="space-y-2 max-h-[45vh] sm:max-h-60 overflow-y-auto">
         {insights.map((ins) => (
           <button
             key={ins.id}
